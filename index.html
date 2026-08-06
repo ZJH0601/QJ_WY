@@ -178,7 +178,7 @@ body {
 
 <div id="toolbar">
   <div class="slot fixed-badge active" data-index="0" id="slot-0">
-    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg" alt="固定全景">
+    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg" alt="固定全景" loading="eager" decoding="async">
     <span class="label">全景 1</span>
   </div>
   <div class="slot" data-index="1" id="slot-1">
@@ -196,11 +196,19 @@ body {
 <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp">
 
 <!-- Three.js with CDN fallback -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script>
-if (typeof THREE === 'undefined') {
-  document.write('<script src="https://unpkg.com/three@0.160.0/build/three.min.js"><\/script>');
-}
+(function loadThree(idx) {
+  var urls = [
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
+    "https://unpkg.com/three@0.160.0/build/three.min.js"
+  ];
+  if (idx >= urls.length) return;
+  var s = document.createElement("script");
+  s.src = urls[idx];
+  s.onload = function () { console.log("Three.js loaded from CDN #" + (idx + 1)); };
+  s.onerror = function () { loadThree(idx + 1); };
+  document.head.appendChild(s);
+})(0);
 </script>
 
 <script>
@@ -249,9 +257,24 @@ if (typeof THREE === 'undefined') {
   camera.position.set(0, 0, 0);
   camera.rotation.order = "YXZ";
 
-  /* sphere */
+  /* sphere with gradient placeholder */
   var sphereGeo = new THREE.SphereGeometry(500, 128, 64);
-  var sphereMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide });
+  var gradCanvas = document.createElement("canvas");
+  gradCanvas.width = 1024; gradCanvas.height = 512;
+  var gctx = gradCanvas.getContext("2d");
+  var grad = gctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, "#1a1a2e"); grad.addColorStop(0.25, "#16213e");
+  grad.addColorStop(0.5, "#0f3460"); grad.addColorStop(0.75, "#16213e");
+  grad.addColorStop(1, "#1a1a2e");
+  gctx.fillStyle = grad; gctx.fillRect(0, 0, 1024, 512);
+  gctx.fillStyle = "rgba(255,255,255,0.25)";
+  for (var i = 0; i < 150; i++) {
+    var sx = Math.random() * 1024, sy = Math.random() * 512, sr = Math.random() * 1.5;
+    gctx.beginPath(); gctx.arc(sx, sy, sr, 0, Math.PI * 2); gctx.fill();
+  }
+  var placeholderTex = new THREE.CanvasTexture(gradCanvas);
+  placeholderTex.colorSpace = THREE.SRGBColorSpace;
+  var sphereMat = new THREE.MeshBasicMaterial({ map: placeholderTex, side: THREE.BackSide });
   var sphere = new THREE.Mesh(sphereGeo, sphereMat);
   scene.add(sphere);
 
@@ -342,8 +365,10 @@ if (typeof THREE === 'undefined') {
         textures[index] = tex;
         slotsLoaded[index] = true;
         if (index === activeIndex) {
+          var oldMap = sphere.material.map;
           sphere.material.map = tex;
           sphere.material.needsUpdate = true;
+          if (oldMap && oldMap !== placeholderTex) oldMap.dispose();
         }
         if (index === 0) initialLoadDone = true;
         hideLoading();
@@ -489,7 +514,7 @@ if (typeof THREE === 'undefined') {
     if (!isDragging) return;
     var dx = e.clientX - prevPointer.x;
     var dy = e.clientY - prevPointer.y;
-    yaw -= dx * 0.003;
+    yaw += dx * 0.003;
     pitch -= dy * 0.003;
     pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, pitch));
     prevPointer.x = e.clientX;
@@ -531,7 +556,7 @@ if (typeof THREE === 'undefined') {
     if (e.touches.length === 1 && isDragging) {
       var dx = e.touches[0].clientX - prevPointer.x;
       var dy = e.touches[0].clientY - prevPointer.y;
-      yaw -= dx * 0.003;
+      yaw += dx * 0.003;
       pitch -= dy * 0.003;
       pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, pitch));
       prevPointer.x = e.touches[0].clientX;
