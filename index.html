@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -184,6 +184,13 @@ body {
   const loadingText = document.getElementById("loading-text");
   const hintEl = document.getElementById("hint");
   const fileInput = document.getElementById("file-input");
+
+  /* ---- WebGL check ---- */
+  if (!(window.WebGLRenderingContext || window.WebGL2RenderingContext)) {
+    loadingText.textContent = "您的浏览器不支持 WebGL，请使用现代浏览器打开";
+    document.querySelector(".spinner").style.display = "none";
+    return;
+  }
 
   /* ---- Three.js setup ---- */
   const renderer = new THREE.WebGLRenderer({ antialias: true });

@@ -1,6 +1,7 @@
-.DS_Store
+﻿.DS_Store
 Thumbs.db
 desktop.ini
 node_modules/
 .vscode/
 *.log
+CKXX.txt
