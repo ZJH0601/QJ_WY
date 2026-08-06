@@ -19,11 +19,10 @@ body {
   -webkit-user-select: none;
 }
 
-/* canvas */
 #canvas-container {
   position: fixed; inset: 0; z-index: 1;
 }
-#canvas-container canvas { display: block; }
+#canvas-container canvas { display: block; touch-action: none; }
 
 /* loading overlay */
 #loading {
@@ -41,7 +40,16 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 #loading-text {
-  color: rgba(255,255,255,0.8); font-size: 15px; letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.85); font-size: 15px; letter-spacing: 0.02em; text-align: center;
+}
+#loading-progress {
+  width: 200px; height: 3px; background: rgba(255,255,255,0.12);
+  border-radius: 3px; overflow: hidden; display: none;
+}
+#loading-progress.show { display: block; }
+#loading-progress-bar {
+  height: 100%; background: var(--accent); border-radius: 3px;
+  width: 0%; transition: width 0.3s;
 }
 
 /* hint */
@@ -127,6 +135,17 @@ body {
 
 #file-input { display: none; }
 
+/* error banner */
+#error-banner {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+  z-index: 200; background: rgba(220,40,40,0.85); color: #fff;
+  padding: 10px 24px; border-radius: 8px; font-size: 13px;
+  display: none; backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  max-width: 90vw; text-align: center;
+}
+#error-banner.show { display: block; }
+
 /* responsive */
 @media (max-width: 500px) {
   #toolbar { gap: 10px; padding: 10px 14px; border-radius: 14px; }
@@ -143,9 +162,12 @@ body {
 <div id="loading">
   <div class="spinner"></div>
   <span id="loading-text">加载全景图中...</span>
+  <div id="loading-progress"><div id="loading-progress-bar"></div></div>
 </div>
 
 <div id="hint">拖拽鼠标 查看四周 · 滚轮缩放</div>
+
+<div id="error-banner"></div>
 
 <div id="top-bar">
   <span id="title">全景图查看器</span>
@@ -173,68 +195,105 @@ body {
 
 <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp">
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js">
+<!-- Three.js with CDN fallback -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+if (typeof THREE === 'undefined') {
+  document.write('<script src="https://unpkg.com/three@0.160.0/build/three.min.js"><\/script>');
+}
 </script>
 
 <script>
 (function () {
   /* ---- DOM refs ---- */
-  const container = document.getElementById("canvas-container");
-  const loadingEl = document.getElementById("loading");
-  const loadingText = document.getElementById("loading-text");
-  const hintEl = document.getElementById("hint");
-  const fileInput = document.getElementById("file-input");
+  var container = document.getElementById("canvas-container");
+  var loadingEl = document.getElementById("loading");
+  var loadingText = document.getElementById("loading-text");
+  var loadingProgress = document.getElementById("loading-progress");
+  var loadingProgressBar = document.getElementById("loading-progress-bar");
+  var hintEl = document.getElementById("hint");
+  var errorBanner = document.getElementById("error-banner");
+  var fileInput = document.getElementById("file-input");
+
+  /* ---- error display ---- */
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    errorBanner.classList.add("show");
+    setTimeout(function () { errorBanner.classList.remove("show"); }, 4000);
+  }
 
   /* ---- WebGL check ---- */
-  if (!(window.WebGLRenderingContext || window.WebGL2RenderingContext)) {
-    loadingText.textContent = "您的浏览器不支持 WebGL，请使用现代浏览器打开";
+  var hasWebGL = !!(window.WebGLRenderingContext || window.WebGL2RenderingContext);
+  if (!hasWebGL) {
+    loadingText.textContent = "您的浏览器不支持 WebGL\n请使用 Chrome、Edge 或 Firefox 打开";
+    document.querySelector(".spinner").style.display = "none";
+    return;
+  }
+
+  /* ---- Three.js check ---- */
+  if (typeof THREE === "undefined") {
+    loadingText.textContent = "无法加载 3D 引擎\n请检查网络连接后刷新页面";
     document.querySelector(".spinner").style.display = "none";
     return;
   }
 
   /* ---- Three.js setup ---- */
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  var renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   container.appendChild(renderer.domElement);
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 1200);
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 1200);
   camera.position.set(0, 0, 0);
   camera.rotation.order = "YXZ";
 
   /* sphere */
-  const sphereGeo = new THREE.SphereGeometry(500, 128, 64);
-  const sphereMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide });
-  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+  var sphereGeo = new THREE.SphereGeometry(500, 128, 64);
+  var sphereMat = new THREE.MeshBasicMaterial({ side: THREE.BackSide });
+  var sphere = new THREE.Mesh(sphereGeo, sphereMat);
   scene.add(sphere);
 
   /* ---- state ---- */
-  const imageSources = [
+  var imageSources = [
     "TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg",
     null,
     null,
   ];
-  const textures = [null, null, null];
-  const slotsLoaded = [false, false, false];
-  let activeIndex = 0;
-  let pendingUploadIndex = -1;
+  var textures = [null, null, null];
+  var slotsLoaded = [false, false, false];
+  var activeIndex = 0;
+  var pendingUploadIndex = -1;
+  var initialLoadDone = false;
 
-  let yaw = 0;
-  let pitch = 0;
-  let fov = 70;
-  let isDragging = false;
-  let prevPointer = { x: 0, y: 0 };
-  let pinchStartDist = 0;
-  let pinchStartFov = 70;
+  var yaw = 0;
+  var pitch = 0;
+  var fov = 70;
+  var isDragging = false;
+  var prevPointer = { x: 0, y: 0 };
+  var pinchStartDist = 0;
+  var pinchStartFov = 70;
 
   /* ---- loading helpers ---- */
-  function showLoading(text) {
+  function showLoading(text, showProgress) {
     loadingText.textContent = text || "加载全景图中...";
+    if (showProgress && !initialLoadDone) {
+      loadingProgress.classList.add("show");
+      loadingProgressBar.style.width = "0%";
+    } else {
+      loadingProgress.classList.remove("show");
+    }
     loadingEl.classList.remove("hidden");
   }
   function hideLoading() {
     loadingEl.classList.add("hidden");
+    loadingProgress.classList.remove("show");
+  }
+  function updateProgress(pct) {
+    if (loadingProgress.classList.contains("show")) {
+      loadingProgressBar.style.width = Math.min(100, Math.round(pct)) + "%";
+    }
   }
 
   /* ---- hint ---- */
@@ -259,39 +318,59 @@ body {
     updateCamera();
   }
 
-  /* ---- texture loading ---- */
-  const texLoader = new THREE.TextureLoader();
+  /* ---- texture management ---- */
+  function disposeTexture(index) {
+    if (textures[index]) {
+      textures[index].dispose();
+      textures[index] = null;
+    }
+  }
+
+  var texLoader = new THREE.TextureLoader();
   function loadTexture(index, source) {
     if (!source) return;
-    showLoading(index === 0 ? "加载固定全景图..." : "加载上传的全景图...");
+    showLoading(index === 0 ? "加载固定全景图..." : "加载上传的全景图...", source.length > 500000);
+    disposeTexture(index);
+
     texLoader.load(
       source,
       function (tex) {
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.minFilter = THREE.LinearFilter;
         tex.magFilter = THREE.LinearFilter;
+        tex.generateMipmaps = true;
         textures[index] = tex;
         slotsLoaded[index] = true;
         if (index === activeIndex) {
           sphere.material.map = tex;
           sphere.material.needsUpdate = true;
         }
+        if (index === 0) initialLoadDone = true;
         hideLoading();
       },
-      undefined,
-      function () {
+      function (xhr) {
+        if (xhr.total > 0) {
+          updateProgress((xhr.loaded / xhr.total) * 100);
+        }
+      },
+      function (err) {
         hideLoading();
-        loadingText.textContent = "加载失败，请重试";
-        loadingEl.classList.remove("hidden");
-        setTimeout(hideLoading, 2000);
-        if (index > 0) slotsLoaded[index] = false;
+        slotsLoaded[index] = false;
+        textures[index] = null;
+        if (index === 0) {
+          loadingText.textContent = "固定全景图加载失败\n请检查网络后刷新页面";
+          document.querySelector(".spinner").style.display = "none";
+        } else {
+          showError("图片加载失败，请检查文件格式后重试");
+          resetSlotUI(index);
+        }
       }
     );
   }
 
   /* ---- slot switching ---- */
   function switchToSlot(index) {
-    if (activeIndex === index) return;
+    if (activeIndex === index && textures[index]) return;
     activeIndex = index;
     document.querySelectorAll(".slot").forEach(function (s) { s.classList.remove("active"); });
     var slotEl = document.getElementById("slot-" + index);
@@ -300,14 +379,37 @@ body {
     if (textures[index]) {
       sphere.material.map = textures[index];
       sphere.material.needsUpdate = true;
-    } else if (slotsLoaded[index] === false && imageSources[index]) {
+    } else if (imageSources[index]) {
       loadTexture(index, imageSources[index]);
     }
   }
 
+  /* ---- slot UI helpers ---- */
+  function resetSlotUI(index) {
+    var s = document.getElementById("slot-" + index);
+    var existingImg = s.querySelector("img");
+    if (existingImg) existingImg.remove();
+    if (!s.querySelector(".upload-icon")) {
+      var icon = document.createElement("span");
+      icon.className = "upload-icon";
+      icon.textContent = "+";
+      s.insertBefore(icon, s.firstChild);
+    }
+    s.querySelector(".label").textContent = "上传全景";
+    s.classList.remove("uploaded");
+  }
+
   /* ---- upload ---- */
   function handleFile(file) {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file || !file.type.startsWith("image/")) {
+      showError("请选择有效的图片文件");
+      return;
+    }
+    if (file.size > 200 * 1024 * 1024) {
+      showError("图片文件过大（最大 200MB）");
+      return;
+    }
+
     var idx = pendingUploadIndex;
     if (idx < 0 || idx > 2) return;
 
@@ -332,6 +434,9 @@ body {
       loadTexture(idx, dataUrl);
       switchToSlot(idx);
     };
+    reader.onerror = function () {
+      showError("文件读取失败，请重试");
+    };
     reader.readAsDataURL(file);
   }
 
@@ -344,47 +449,27 @@ body {
 
   /* ---- slot click handlers ---- */
   document.querySelectorAll(".slot").forEach(function (slot) {
-    /* click on slot */
     slot.addEventListener("click", function (e) {
-      /* ignore clicks on delete button */
       if (e.target.classList.contains("delete-btn")) return;
-
       var index = parseInt(slot.dataset.index, 10);
       if (slotsLoaded[index]) {
         switchToSlot(index);
       } else {
-        /* open file picker */
         pendingUploadIndex = index;
         fileInput.click();
       }
     });
 
-    /* delete button */
     var delBtn = slot.querySelector(".delete-btn");
     if (delBtn) {
       delBtn.addEventListener("click", function (e) {
         e.stopPropagation();
         var index = parseInt(slot.dataset.index, 10);
-        if (index === 0) return; /* cannot delete fixed slot */
-        /* remove upload */
+        if (index === 0) return;
+        disposeTexture(index);
         imageSources[index] = null;
-        textures[index] = null;
         slotsLoaded[index] = false;
-
-        /* reset slot UI */
-        var s = document.getElementById("slot-" + index);
-        var existingImg = s.querySelector("img");
-        if (existingImg) existingImg.remove();
-        if (!s.querySelector(".upload-icon")) {
-          var icon = document.createElement("span");
-          icon.className = "upload-icon";
-          icon.textContent = "+";
-          s.insertBefore(icon, s.firstChild);
-        }
-        s.querySelector(".label").textContent = "上传全景";
-        s.classList.remove("uploaded");
-
-        /* switch away if active */
+        resetSlotUI(index);
         if (activeIndex === index) {
           switchToSlot(0);
         }
@@ -466,9 +551,12 @@ body {
   }, { passive: false });
 
   renderer.domElement.addEventListener("touchend", function () { isDragging = false; });
+  renderer.domElement.addEventListener("touchcancel", function () { isDragging = false; });
 
   /* ---- controls: keyboard ---- */
   window.addEventListener("keydown", function (e) {
+    /* ignore when typing in inputs */
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
     var speed = 0.04;
     var handled = true;
     switch (e.key) {
@@ -495,6 +583,19 @@ body {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+
+  /* ---- WebGL context loss ---- */
+  renderer.domElement.addEventListener("webglcontextlost", function (e) {
+    e.preventDefault();
+  }, false);
+
+  renderer.domElement.addEventListener("webglcontextrestored", function () {
+    /* re-apply current texture */
+    if (textures[activeIndex]) {
+      sphere.material.map = textures[activeIndex];
+      sphere.material.needsUpdate = true;
+    }
+  }, false);
 
   /* ---- render loop ---- */
   function animate() {
