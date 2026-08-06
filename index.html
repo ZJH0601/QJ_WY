@@ -176,7 +176,7 @@ body {
 <div id="error-banner"></div>
 
 <div id="top-bar">
-  <span id="title">全景图查看器 v6</span>
+  <span id="title">全景图查看器 v7</span>
   <button id="reset-btn" title="重置视角">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
   </button>
@@ -184,7 +184,7 @@ body {
 
 <div id="toolbar">
   <div class="slot fixed-badge active" data-index="0" id="slot-0">
-    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg?v=6" alt="固定全景" loading="eager" decoding="async">
+    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg?v=7" alt="固定全景" loading="eager" decoding="async">
     <span class="label">全景 1</span>
   </div>
   <div class="slot" data-index="1" id="slot-1">
@@ -201,7 +201,7 @@ body {
 
 <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp">
 
-<script src="js/three.min.js?v=6"></script>
+<script src="js/three.min.js?v=7"></script>
 
 <script>
 (function () {
@@ -342,9 +342,17 @@ body {
   }
 
   var texLoader = new THREE.TextureLoader();
-  function loadTexture(index, source) {
+  var retryCount0 = 0;
+  var maxRetries = 3;
+  function loadTexture(index, source, isRetry) {
     if (!source) return;
-    showLoading(index === 0 ? "加载固定全景图..." : "加载上传的全景图...", source.length > 500000);
+    if (!isRetry) {
+      showLoading(index === 0 ? "加载固定全景图..." : "加载上传的全景图...", typeof source === "string" && source.length > 500000);
+    }
+    if (index === 0 && isRetry) {
+      loadingText.textContent = "正在重试加载... (" + (retryCount0 + 1) + "/" + maxRetries + ")";
+      loadingEl.classList.remove("hidden");
+    }
     disposeTexture(index);
 
     texLoader.load(
@@ -362,7 +370,7 @@ body {
           sphere.material.needsUpdate = true;
           if (oldMap && oldMap !== placeholderTex) oldMap.dispose();
         }
-        if (index === 0) initialLoadDone = true;
+        if (index === 0) { initialLoadDone = true; retryCount0 = 0; }
         hideLoading();
       },
       function (xhr) {
@@ -375,8 +383,17 @@ body {
         slotsLoaded[index] = false;
         textures[index] = null;
         if (index === 0) {
-          loadingText.textContent = "固定全景图加载失败\n请检查网络后刷新页面";
-          document.querySelector(".spinner").style.display = "none";
+          if (retryCount0 < maxRetries) {
+            retryCount0++;
+            setTimeout(function () { loadTexture(0, source, true); }, 2000 * retryCount0);
+          } else {
+            retryCount0 = 0;
+            loadingText.textContent = "固定全景图加载失败\n点击左侧槽位重试或手动上传";
+            document.querySelector(".spinner").style.display = "none";
+            loadingEl.classList.remove("hidden");
+            setTimeout(function () { loadingEl.classList.add("hidden"); }, 5000);
+            resetSlotUI(0);
+          }
         } else {
           showError("图片加载失败，请检查文件格式后重试");
           resetSlotUI(index);
@@ -471,6 +488,9 @@ body {
       var index = parseInt(slot.dataset.index, 10);
       if (slotsLoaded[index]) {
         switchToSlot(index);
+      } else if (index === 0 && imageSources[0]) {
+        retryCount0 = 0;
+        loadTexture(0, imageSources[0], false);
       } else {
         pendingUploadIndex = index;
         fileInput.click();
