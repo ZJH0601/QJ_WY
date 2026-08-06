@@ -1,8 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>全景图查看器</title>
 <style>
 :root {
@@ -178,7 +181,7 @@ body {
 
 <div id="toolbar">
   <div class="slot fixed-badge active" data-index="0" id="slot-0">
-    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg" alt="固定全景" loading="eager" decoding="async">
+    <img src="TP/dji_fly_20260429_190006_0003_1777464777723_pano.jpg?v=3" alt="固定全景" loading="eager" decoding="async">
     <span class="label">全景 1</span>
   </div>
   <div class="slot" data-index="1" id="slot-1">
@@ -195,21 +198,7 @@ body {
 
 <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,image/bmp">
 
-<!-- Three.js with CDN fallback -->
-<script>
-(function loadThree(idx) {
-  var urls = [
-    "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
-    "https://unpkg.com/three@0.160.0/build/three.min.js"
-  ];
-  if (idx >= urls.length) return;
-  var s = document.createElement("script");
-  s.src = urls[idx];
-  s.onload = function () { console.log("Three.js loaded from CDN #" + (idx + 1)); };
-  s.onerror = function () { loadThree(idx + 1); };
-  document.head.appendChild(s);
-})(0);
-</script>
+<script src="js/three.min.js?v=3"></script>
 
 <script>
 (function () {
@@ -514,7 +503,7 @@ body {
     if (!isDragging) return;
     var dx = e.clientX - prevPointer.x;
     var dy = e.clientY - prevPointer.y;
-    yaw += dx * 0.003;
+    yaw -= dx * 0.003;
     pitch -= dy * 0.003;
     pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, pitch));
     prevPointer.x = e.clientX;
@@ -556,7 +545,7 @@ body {
     if (e.touches.length === 1 && isDragging) {
       var dx = e.touches[0].clientX - prevPointer.x;
       var dy = e.touches[0].clientY - prevPointer.y;
-      yaw += dx * 0.003;
+      yaw -= dx * 0.003;
       pitch -= dy * 0.003;
       pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, pitch));
       prevPointer.x = e.touches[0].clientX;
